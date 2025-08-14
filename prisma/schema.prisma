@@ -1,0 +1,262 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  username      String   @unique
+  firstName     String
+  lastName      String
+  profileImage  String?
+  role          UserRole @default(STUDENT)
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  // Relations
+  attempts         Attempt[]
+  grades          Grade[]
+  notes           Note[]
+  learningPaths   LearningPath[]
+  enrolledCourses Course[] @relation("CourseEnrollments")
+  ownedCourses    Course[] @relation("CourseOwner")
+
+  @@map("users")
+}
+
+model Course {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  level       Level    @default(BEGINNER)
+  language    String
+  isPublished Boolean  @default(false)
+  imageUrl    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Foreign keys
+  instructorId String
+  
+  // Relations
+  instructor     User              @relation("CourseOwner", fields: [instructorId], references: [id], onDelete: Cascade)
+  lessons        Lesson[]
+  enrolledUsers  User[]            @relation("CourseEnrollments")
+  learningPaths  LearningPath[]
+
+  @@map("courses")
+}
+
+model Lesson {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  content     String?
+  orderIndex  Int
+  duration    Int?     // Duration in minutes
+  isPublished Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Foreign keys
+  courseId String
+  
+  // Relations
+  course    Course     @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  questions Question[]
+  attempts  Attempt[]
+
+  @@unique([courseId, orderIndex])
+  @@map("lessons")
+}
+
+model Question {
+  id            String       @id @default(cuid())
+  title         String
+  content       String
+  questionType  QuestionType @default(MULTIPLE_CHOICE)
+  points        Int          @default(1)
+  orderIndex    Int
+  explanation   String?      // Explanation for correct answer
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  
+  // Foreign keys
+  lessonId String
+  
+  // Relations
+  lesson         Lesson          @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  choices        Choice[]
+  attemptAnswers AttemptAnswer[]
+  notes          Note[]
+  grades         Grade[]
+
+  @@unique([lessonId, orderIndex])
+  @@map("questions")
+}
+
+model Choice {
+  id        String   @id @default(cuid())
+  text      String
+  isCorrect Boolean  @default(false)
+  orderIndex Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  // Foreign keys
+  questionId String
+  
+  // Relations
+  question       Question        @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  attemptAnswers AttemptAnswer[]
+
+  @@unique([questionId, orderIndex])
+  @@map("choices")
+}
+
+model Attempt {
+  id            String        @id @default(cuid())
+  status        AttemptStatus @default(IN_PROGRESS)
+  startedAt     DateTime      @default(now())
+  completedAt   DateTime?
+  totalScore    Float?        // Total score achieved
+  maxScore      Float?        // Maximum possible score
+  timeSpent     Int?          // Time spent in seconds
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  
+  // Foreign keys
+  userId   String
+  lessonId String
+  
+  // Relations
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lesson         Lesson          @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  attemptAnswers AttemptAnswer[]
+  grades         Grade[]
+
+  @@map("attempts")
+}
+
+model AttemptAnswer {
+  id           String   @id @default(cuid())
+  answerText   String?  // For text-based answers
+  isCorrect    Boolean? // Whether the answer was correct
+  pointsEarned Float    @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  
+  // Foreign keys
+  attemptId  String
+  questionId String
+  choiceId   String? // For multiple choice questions
+  
+  // Relations
+  attempt  Attempt  @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  choice   Choice?  @relation(fields: [choiceId], references: [id], onDelete: SetNull)
+
+  @@unique([attemptId, questionId])
+  @@map("attempt_answers")
+}
+
+model Grade {
+  id          String    @id @default(cuid())
+  score       Float     // Actual score achieved
+  maxScore    Float     // Maximum possible score
+  percentage  Float     // Percentage score (score/maxScore * 100)
+  feedback    String?   // Instructor feedback
+  isPublished Boolean   @default(false)
+  gradedAt    DateTime  @default(now())
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  
+  // Foreign keys
+  userId     String
+  attemptId  String   @unique // One grade per attempt
+  questionId String?  // Optional: grade per question
+  
+  // Relations
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  attempt  Attempt   @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  question Question? @relation(fields: [questionId], references: [id], onDelete: SetNull)
+
+  @@map("grades")
+}
+
+model Note {
+  id        String   @id @default(cuid())
+  content   String
+  isPrivate Boolean  @default(true) // Whether note is private to user
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  // Foreign keys
+  userId     String
+  questionId String
+  
+  // Relations
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, questionId]) // One note per user per question
+  @@map("notes")
+}
+
+model LearningPath {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  isActive    Boolean  @default(true)
+  progress    Float    @default(0) // Progress percentage (0-100)
+  startedAt   DateTime @default(now())
+  completedAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Foreign keys
+  userId String
+  
+  // Relations
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  courses Course[]
+
+  @@map("learning_paths")
+}
+
+// Enums
+enum UserRole {
+  ADMIN
+  INSTRUCTOR
+  STUDENT
+}
+
+enum Level {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+}
+
+enum QuestionType {
+  MULTIPLE_CHOICE
+  TRUE_FALSE
+  FILL_IN_BLANK
+  ESSAY
+  SHORT_ANSWER
+}
+
+enum AttemptStatus {
+  IN_PROGRESS
+  COMPLETED
+  SUBMITTED
+  GRADED
+}
